@@ -82,7 +82,8 @@ http://localhost:8080/
 | Quality          | Anteil der Keywords in der Antwort         |
 | Fehler           | Exception / Timeout / Status != 200        |
 
-Ollama einrichten
+
+## Ollama einrichten
 Ollama ist eine lokale LLM-Laufzeitumgebung. Dieses Projekt verwendet es als lokalen API-Endpunkt.
 Die Konfiguration erfolgt automatisch über docker-compose.yml, aber hier die wichtigsten Schritte:
 
