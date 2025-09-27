@@ -89,9 +89,16 @@ Die Konfiguration erfolgt automatisch über docker-compose.yml, aber hier die wi
 
 Modelle herunterladen
 Modelle werden zur Laufzeit automatisch heruntergeladen, sofern sie nicht lokal verfügbar sind. Alternativ kannst du sie manuell vorab laden:
+
+```
 ollama pull qwen:1.8b
+```
+```
 ollama pull mistral
+```
+```
 ollama pull llama2
+```
 
 Weitere Modelle finden
 Du findest zusätzliche Modelle in den offiziellen Bibliotheken bzw. Repositorien von Ollama:
@@ -104,5 +111,9 @@ Hugging Face Model Hub — viele Modelle, die für LLM-Inference geeignet sind
 https://huggingface.co/models
 ```
 Je nach model:-Eintrag im GUI (bzw. API) können mehrere Varianten unterstützt werden:
+```
 ollama pull qwen2.5:3b
+```
+```
 ollama pull gemma:2b
+```
