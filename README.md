@@ -87,7 +87,6 @@ http://localhost:8080/
 Ollama ist eine lokale LLM-Laufzeitumgebung. Dieses Projekt verwendet es als lokalen API-Endpunkt.
 Die Konfiguration erfolgt automatisch über docker-compose.yml, aber hier die wichtigsten Schritte:
 
-Modelle herunterladen
 Modelle werden zur Laufzeit automatisch heruntergeladen, sofern sie nicht lokal verfügbar sind. Alternativ kannst du sie manuell vorab laden:
 
 ```
@@ -100,7 +99,7 @@ ollama pull mistral
 ollama pull llama2
 ```
 
-Weitere Modelle finden
+# Weitere Modelle finden
 Du findest zusätzliche Modelle in den offiziellen Bibliotheken bzw. Repositorien von Ollama:
 Ollama Model Library — offizielle Liste verfügbarer Modelle
 ```
