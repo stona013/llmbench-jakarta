@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llmbench-jakarta
+    ports:
+      - "8080:8080"
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434   # <--- wichtig
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama-data:

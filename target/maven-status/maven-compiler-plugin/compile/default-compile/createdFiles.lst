@@ -1,0 +1,13 @@
+de\example\llmbench\api\AppConfig.class
+de\example\llmbench\api\BenchmarkDto$BenchRequest.class
+de\example\llmbench\api\StatsUtil.class
+de\example\llmbench\api\BenchmarkDto$BenchResponse.class
+de\example\llmbench\api\BenchmarkService.class
+de\example\llmbench\api\BenchmarkDto$Aggregates.class
+de\example\llmbench\api\BenchmarkDto$SingleRunResult.class
+de\example\llmbench\api\BenchmarkModels.class
+de\example\llmbench\api\BenchResource.class
+de\example\llmbench\api\OllamaClient.class
+de\example\llmbench\api\ModelsResource.class
+de\example\llmbench\api\QualityUtil.class
+de\example\llmbench\api\BenchmarkDto.class

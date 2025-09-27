@@ -1,0 +1,7 @@
+<server description="LLM Bench Jakarta">
+    <featureManager>
+        <feature>jakartaee-10.0</feature>
+    </featureManager>
+    <httpEndpoint id="defaultHttpEndpoint" httpPort="9080" httpsPort="9443" />
+    <webApplication id="llmbench" location="llmbench-jakarta.war" contextRoot="/" />
+</server>

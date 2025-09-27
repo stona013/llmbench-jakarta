@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>LLM Bench GUI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;margin:24px;max-width:1100px}
+    h1{font-size:22px;margin:0 0 12px}
+    fieldset{border:1px solid #ccc;padding:12px;margin-bottom:12px}
+    label{display:block;margin:6px 0 2px}
+    input,select,textarea{width:100%;padding:8px;box-sizing:border-box}
+    .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+    button{padding:10px 14px;cursor:pointer}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{border:1px solid #ddd;padding:8px;text-align:left}
+    th{background:#f2f2f2}
+    .ok{color:#0a7a0a}.err{color:#a00}.small{font-size:12px;color:#555}
+    .log{white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:8px;margin-top:8px;max-height:220px;overflow:auto}
+    #agg{margin-top:8px}
+  </style>
+</head>
+<body>
+<h1>LLM Benchmark Cockpit</h1>
+
+<fieldset>
+  <legend>Einstellungen</legend>
+
+  <div class="row">
+    <div>
+      <label for="provider">Provider</label>
+      <select id="provider"><option value="ollama">ollama</option></select>
+    </div>
+    <div>
+      <label for="model">Modellname</label>
+      <div class="row" style="grid-template-columns: 1fr auto auto">
+        <select id="model"></select>
+        <button type="button" id="reloadModels">Aktualisieren</button>
+        <span id="modelInfo" class="small"></span>
+      </div>
+    </div>
+    <div>
+      <label for="runs">Anzahl Läufe</label>
+      <input id="runs" type="number" min="1" max="200" value="3">
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label for="temperature">Temperature</label>
+      <input id="temperature" type="number" step="0.1" min="0" max="2" value="0.2">
+    </div>
+    <div>
+      <label for="maxTokens">Max Tokens</label>
+      <input id="maxTokens" type="number" min="1" max="2048" value="64">
+    </div>
+    <div>
+      <label for="timeout">Timeout Millisekunden</label>
+      <input id="timeout" type="number" min="1000" value="60000">
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label for="concurrency">Parallelität</label>
+      <input id="concurrency" type="number" min="1" max="32" value="1">
+    </div>
+    <div>
+      <label for="testplan">Testplan</label>
+      <select id="testplan">
+        <option value="">(kein Testplan)</option>
+        <option value="coldWarm">Cold vs Warm</option>
+        <option value="consistency">Konsistenz</option>
+        <option value="parallel">Parallelität</option>
+      </select>
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button id="planBtn" type="button">Testplan starten</button>
+    </div>
+  </div>
+
+  <label for="prompt">Prompt</label>
+  <textarea id="prompt" rows="3">Nenne drei Programmiersprachen.</textarea>
+
+  <!-- NEU: Keywords -->
+  <label for="keywords">Erwartete Keywords
+    <span class="small">(Komma, Semikolon oder Zeilenumbruch als Trenner; Vergleich in Kleinschreibung)</span>
+  </label>
+  <textarea id="keywords" rows="2">python, java, c++, javascript</textarea>
+
+  <div style="margin-top:10px">
+    <button id="runBtn">Benchmark starten</button>
+    <button id="csvBtn" type="button">CSV herunterladen</button>
+    <span id="status" class="small"></span>
+  </div>
+  <div id="agg" class="small"></div>
+</fieldset>
+
+<table id="resTable" hidden>
+  <thead>
+    <tr>
+      <th>Lauf</th><th>HTTP Status</th><th>Erfolg</th><th>Dauer ms</th>
+      <th>Tokens in</th><th>Tokens out</th><th>Bytes</th>
+      <th>Quality</th> <!-- NEU -->
+      <th>Fehler</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<div id="log" class="log" hidden></div>
+
+<script>
+const $ = sel => document.querySelector(sel);
+
+const resTable = $("#resTable");
+const tbody = resTable.querySelector("tbody");
+const logBox = $("#log");
+const statusEl = $("#status");
+const runBtn = $("#runBtn");
+const csvBtn = $("#csvBtn");
+const planBtn = $("#planBtn");
+const modelSelect = $("#model");
+const reloadBtn = $("#reloadModels");
+const modelInfo = $("#modelInfo");
+const aggBox = $("#agg");
+const testplanSelect = $("#testplan");
+
+function setStatus(t){ statusEl.textContent = t; }
+
+function safeNum(val, def) {
+  const n = Number(val);
+  return Number.isFinite(n) ? n : def;
+}
+
+function parseKeywords(raw) {
+  if (!raw) return [];
+  return raw
+    .split(/[\n,;]+/)
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function collectBody() {
+  return {
+    provider: $("#provider").value,
+    model: $("#model").value.trim(),
+    prompt: $("#prompt").value,
+    runs: safeNum($("#runs").value, 3),
+    concurrency: safeNum($("#concurrency").value, 1),
+    temperature: safeNum($("#temperature").value, 0.2),
+    maxTokens: safeNum($("#maxTokens").value, 64),
+    timeoutMs: safeNum($("#timeout").value, 60000),
+    expectedKeywords: parseKeywords($("#keywords").value)   // NEU
+  };
+}
+
+async function loadModels() {
+  modelSelect.innerHTML = "";
+  modelInfo.textContent = "Lade Modelle";
+  try {
+    const resp = await fetch("/api/models");
+    const data = await resp.json();
+    const list = Array.isArray(data.models) ? data.models : [];
+    if (list.length === 0) throw new Error("Leer");
+    list.forEach(name => addOption(modelSelect, name));
+    modelSelect.value = list.find(x => ["qwen2.5:3b","mistral","llama3:8b"].includes(x)) || list[0];
+    modelInfo.textContent = "Modelle: " + list.length;
+  } catch {
+    addOption(modelSelect, "qwen2.5:3b");
+    addOption(modelSelect, "mistral");
+    modelInfo.textContent = "Fehler beim Laden. Fallback aktiv";
+  }
+  if (!modelSelect.value) modelSelect.value = modelSelect.options[0]?.value || "";
+}
+
+function addOption(sel, val) {
+  const o = document.createElement("option");
+  o.value = val;
+  o.textContent = val;
+  sel.appendChild(o);
+}
+
+async function runBench() {
+  setStatus("Sende Anfrage");
+  resTable.hidden = true; logBox.hidden = true; aggBox.textContent = "";
+  tbody.innerHTML = ""; runBtn.disabled = true; csvBtn.disabled = true;
+
+  const body = collectBody();
+  const t0 = performance.now();
+  try {
+    const resp = await fetch("/api/bench", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const json = await resp.json();
+    const t1 = performance.now();
+    setStatus("Antwort erhalten in " + Math.round(t1 - t0) + " ms");
+    resTable.hidden = false;
+
+    if (Array.isArray(json.results)) {
+      json.results.forEach((r, i) => {
+        const tr = document.createElement("tr");
+        const dur = r.endNanos && r.startNanos ? ((r.endNanos - r.startNanos) / 1_000_000).toFixed(1) : "";
+        const q  = r.quality != null ? (r.quality * 100).toFixed(0) + "%" : "";
+        tr.innerHTML = `
+          <td>${i + 1}</td><td>${r.httpStatus ?? ""}</td>
+          <td class="${r.success ? "ok" : "err"}">${r.success}</td>
+          <td>${dur}</td><td>${r.inputTokens ?? ""}</td>
+          <td>${r.outputTokens ?? ""}</td><td>${r.responseBytes ?? ""}</td>
+          <td>${q}</td>
+          <td>${r.error ? String(r.error).substring(0,160) : ""}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    if (json.aggregates) {
+      const a = json.aggregates;
+      aggBox.textContent =
+        `Ø ${a.avgMs.toFixed(1)} ms | p50 ${a.p50Ms.toFixed(1)} | ` +
+        `p95 ${a.p95Ms.toFixed(1)} | min ${a.minMs.toFixed(1)} | max ${a.maxMs.toFixed(1)} | Läufe ${a.runs}`;
+    }
+
+    logBox.hidden = false;
+    logBox.textContent = JSON.stringify(json, null, 2);
+  } catch(e){
+    setStatus("Fehler bei der Anfrage");
+    logBox.hidden = false;
+    logBox.textContent = String(e);
+  } finally {
+    runBtn.disabled = false; csvBtn.disabled = false;
+  }
+}
+
+async function downloadCsv() {
+  const body = collectBody();
+  const resp = await fetch("/api/bench/csv", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "bench.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ---- Hilfen für Konsistenzbewertung ----
+function normalizeText(s) {
+  return (s || "")
+    .toString()
+    .lowerCase?.() ?? (s || "").toString().toLowerCase();
+}
+function jaccard(a, b) {
+  const A = new Set(normalizeText(a).replace(/\s+/g," ").trim().split(" ").filter(Boolean));
+  const B = new Set(normalizeText(b).replace(/\s+/g," ").trim().split(" ").filter(Boolean));
+  if (A.size === 0 && B.size === 0) return 1;
+  let inter = 0;
+  A.forEach(x => { if (B.has(x)) inter++; });
+  const union = A.size + B.size - inter;
+  return union > 0 ? inter / union : 0;
+}
+function avg(arr){ return arr.length ? arr.reduce((s,x)=>s+x,0)/arr.length : 0; }
+
+async function runTestPlan() {
+  const plan = testplanSelect.value;
+  if (!plan) { alert("Bitte einen Testplan auswählen"); return; }
+
+  const base = collectBody();
+  runBtn.disabled = true;
+  planBtn.disabled = true;
+  setStatus("Führe Testplan aus: " + plan);
+
+  logBox.hidden = false;
+  logBox.textContent = "";
+  const append = txt => { logBox.textContent += txt + "\n"; };
+
+  const cases = [];
+  if (plan === "coldWarm") {
+    cases.push({ name: "Cold", conf: { ...base, runs: 1, concurrency: 1 } });
+    cases.push({ name: "Warm", conf: { ...base, runs: Math.max(3, base.runs), concurrency: 1 } });
+  } else if (plan === "consistency") {
+    cases.push({ name: "Consistency", conf: { ...base, runs: Math.max(10, base.runs), concurrency: 1 } });
+  } else if (plan === "parallel") {
+    [1, 2, 4].forEach(c => cases.push({ name: "C" + c, conf: { ...base, concurrency: c } }));
+  }
+
+  for (let i = 0; i < cases.length; i++) {
+    const { name, conf } = cases[i];
+    setStatus(`Test ${i + 1} von ${cases.length} (${name})`);
+    try {
+      const resp = await fetch("/api/bench", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(conf)
+      });
+      const data = await resp.json();
+
+      const ok = Array.isArray(data.results) ? data.results.filter(r => r && r.success).length : 0;
+      const total = Array.isArray(data.results) ? data.results.length : 0;
+      const a = data.aggregates;
+
+      append(`== ${name} ==`);
+      append(`Runs ${total} Erfolg ${ok}/${total}`);
+      if (a) {
+        append(`avg ${a.avgMs.toFixed(1)} ms p50 ${a.p50Ms.toFixed(1)} p95 ${a.p95Ms.toFixed(1)} min ${a.minMs.toFixed(1)} max ${a.maxMs.toFixed(1)}`);
+      }
+
+      if (plan === "consistency" && Array.isArray(data.results)) {
+        const texts = data.results
+          .map(r => r.text || r.response || r.output || null)
+          .filter(x => typeof x === "string" && x.length > 0);
+
+        if (texts.length >= 2) {
+          const sims = [];
+          for (let j = 1; j < texts.length; j++) sims.push(jaccard(texts[j-1], texts[j]));
+          append(`Konsistenz (Jaccard, benachbart): Ø ${(avg(sims)*100).toFixed(1)}%`);
+        } else {
+          const bytes = data.results.map(r => r.responseBytes).filter(x => Number.isFinite(x));
+          const uniq = new Set(bytes.map(b => String(b))).size;
+          append(`Konsistenz (Fallback Bytes): ${bytes.length-uniq} gleiche / ${bytes.length} total (unique=${uniq})`);
+          append(`Hinweis: Für bessere Konsistenzmessung Antworttext im Backend mitliefern.`);
+        }
+      }
+      append("");
+    } catch (e) {
+      append(`Fehler in ${name}: ` + String(e));
+    }
+  }
+
+  setStatus("Testplan abgeschlossen");
+  runBtn.disabled = false;
+  planBtn.disabled = false;
+}
+
+if (reloadBtn) reloadBtn.addEventListener("click", loadModels);
+if (runBtn) runBtn.addEventListener("click", runBench);
+if (csvBtn)  csvBtn.addEventListener("click", downloadCsv);
+if (planBtn) planBtn.addEventListener("click", runTestPlan);
+
+loadModels();
+</script>
+
+</body>
+</html>
