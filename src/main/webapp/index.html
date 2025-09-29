@@ -1,3 +1,29 @@
+<!--
+  Dieses HTML-Frontend dient als Benutzeroberfläche für das LLM Benchmark-Backend (Java/Jakarta REST API).
+  Die wichtigsten Java-REST-Endpunkte, die von diesem Frontend angesprochen werden:
+
+  - POST /api/bench
+      Erwartet ein JSON-Objekt mit Benchmark-Parametern (siehe BenchmarkDto.BenchRequest).
+      Antwort: JSON mit Einzelergebnissen und Statistiken (siehe BenchmarkDto.BenchResponse).
+
+  - POST /api/bench/csv
+      Erwartet ein JSON-Objekt mit Benchmark-Parametern.
+      Antwort: CSV-Datei mit Metriken aller Durchläufe.
+
+  - GET /api/models
+      Antwort: JSON mit Liste der verfügbaren Modellnamen vom Ollama-Server.
+
+  Die Java-Implementierung dieser Endpunkte befindet sich in:
+    - BenchResource.java (REST-API für Benchmarks)
+    - ModelsResource.java (REST-API für Modell-Liste)
+    - BenchmarkService.java (Logik für Benchmark-Ausführung)
+    - BenchmarkDto.java (DTOs für Requests/Responses)
+    - OllamaClient.java (Kommunikation mit Ollama-API)
+    - QualityUtil.java, StatsUtil.java (Hilfsfunktionen für Auswertung)
+
+  Die Kommunikation erfolgt ausschließlich über HTTP-Requests an die oben genannten Endpunkte.
+  Die Java-API verarbeitet die Anfragen, führt ggf. parallele LLM-Requests aus und liefert die Ergebnisse zurück.
+-->
 <!doctype html>
 <html lang="de">
 <head>
@@ -127,13 +153,16 @@ const modelInfo = $("#modelInfo");
 const aggBox = $("#agg");
 const testplanSelect = $("#testplan");
 
+// Setzt den Status-Text im UI
 function setStatus(t){ statusEl.textContent = t; }
 
+// Wandelt einen Wert in eine Zahl um, liefert Standardwert falls ungültig
 function safeNum(val, def) {
   const n = Number(val);
   return Number.isFinite(n) ? n : def;
 }
 
+// Parst die erwarteten Keywords aus dem Textfeld (Komma, Semikolon, Zeilenumbruch als Trenner)
 function parseKeywords(raw) {
   if (!raw) return [];
   return raw
@@ -142,6 +171,7 @@ function parseKeywords(raw) {
     .filter(Boolean);
 }
 
+// Sammelt alle Eingabewerte aus dem Formular und baut das Request-Objekt für die API
 function collectBody() {
   return {
     provider: $("#provider").value,
@@ -156,6 +186,7 @@ function collectBody() {
   };
 }
 
+// Lädt die verfügbaren Modelle vom Backend und füllt das Dropdown
 async function loadModels() {
   modelSelect.innerHTML = "";
   modelInfo.textContent = "Lade Modelle";
@@ -175,6 +206,7 @@ async function loadModels() {
   if (!modelSelect.value) modelSelect.value = modelSelect.options[0]?.value || "";
 }
 
+// Fügt eine Option zum Modell-Dropdown hinzu
 function addOption(sel, val) {
   const o = document.createElement("option");
   o.value = val;
@@ -182,6 +214,7 @@ function addOption(sel, val) {
   sel.appendChild(o);
 }
 
+// Startet einen Benchmark-Lauf, sendet die Anfrage an die Java-API und zeigt die Ergebnisse an
 async function runBench() {
   setStatus("Sende Anfrage");
   resTable.hidden = true; logBox.hidden = true; aggBox.textContent = "";
@@ -199,6 +232,7 @@ async function runBench() {
     setStatus("Antwort erhalten in " + Math.round(t1 - t0) + " ms");
     resTable.hidden = false;
 
+    // Zeigt die Einzelergebnisse in der Tabelle an
     if (Array.isArray(json.results)) {
       json.results.forEach((r, i) => {
         const tr = document.createElement("tr");
@@ -215,6 +249,7 @@ async function runBench() {
       });
     }
 
+    // Zeigt die aggregierten Statistiken an
     if (json.aggregates) {
       const a = json.aggregates;
       aggBox.textContent =
@@ -233,6 +268,7 @@ async function runBench() {
   }
 }
 
+// Fordert die Benchmark-Ergebnisse als CSV vom Backend an und lädt sie herunter
 async function downloadCsv() {
   const body = collectBody();
   const resp = await fetch("/api/bench/csv", {
@@ -247,12 +283,16 @@ async function downloadCsv() {
   URL.revokeObjectURL(url);
 }
 
-// ---- Hilfen für Konsistenzbewertung ----
+// ---- Hilfsfunktionen für Konsistenzbewertung ----
+
+// Normalisiert einen Text für Vergleichszwecke (Kleinschreibung)
 function normalizeText(s) {
   return (s || "")
     .toString()
     .lowerCase?.() ?? (s || "").toString().toLowerCase();
 }
+
+// Berechnet die Jaccard-Ähnlichkeit zwischen zwei Texten (Wortmengen)
 function jaccard(a, b) {
   const A = new Set(normalizeText(a).replace(/\s+/g," ").trim().split(" ").filter(Boolean));
   const B = new Set(normalizeText(b).replace(/\s+/g," ").trim().split(" ").filter(Boolean));
@@ -262,8 +302,11 @@ function jaccard(a, b) {
   const union = A.size + B.size - inter;
   return union > 0 ? inter / union : 0;
 }
+
+// Durchschnittswert eines Zahlenarrays
 function avg(arr){ return arr.length ? arr.reduce((s,x)=>s+x,0)/arr.length : 0; }
 
+// Führt einen Testplan (z.B. Konsistenz, Parallelität) automatisiert aus und zeigt die Ergebnisse an
 async function runTestPlan() {
   const plan = testplanSelect.value;
   if (!plan) { alert("Bitte einen Testplan auswählen"); return; }
@@ -277,6 +320,7 @@ async function runTestPlan() {
   logBox.textContent = "";
   const append = txt => { logBox.textContent += txt + "\n"; };
 
+  // Definiert die Testfälle je nach gewähltem Plan
   const cases = [];
   if (plan === "coldWarm") {
     cases.push({ name: "Cold", conf: { ...base, runs: 1, concurrency: 1 } });
@@ -287,6 +331,7 @@ async function runTestPlan() {
     [1, 2, 4].forEach(c => cases.push({ name: "C" + c, conf: { ...base, concurrency: c } }));
   }
 
+  // Führt die Testfälle nacheinander aus und zeigt die Ergebnisse an
   for (let i = 0; i < cases.length; i++) {
     const { name, conf } = cases[i];
     setStatus(`Test ${i + 1} von ${cases.length} (${name})`);
@@ -307,6 +352,7 @@ async function runTestPlan() {
         append(`avg ${a.avgMs.toFixed(1)} ms p50 ${a.p50Ms.toFixed(1)} p95 ${a.p95Ms.toFixed(1)} min ${a.minMs.toFixed(1)} max ${a.maxMs.toFixed(1)}`);
       }
 
+      // Konsistenzbewertung für den Consistency-Testplan
       if (plan === "consistency" && Array.isArray(data.results)) {
         const texts = data.results
           .map(r => r.text || r.response || r.output || null)
@@ -334,6 +380,7 @@ async function runTestPlan() {
   planBtn.disabled = false;
 }
 
+// Event-Handler für Buttons und Initialisierung
 if (reloadBtn) reloadBtn.addEventListener("click", loadModels);
 if (runBtn) runBtn.addEventListener("click", runBench);
 if (csvBtn)  csvBtn.addEventListener("click", downloadCsv);

@@ -15,12 +15,24 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * REST-Resource zum Auflisten verfügbarer LLM-Modelle vom Ollama-Server.
+ * 
+ * Fragt die Ollama-API ab und gibt die Modellnamen sowie Metadaten als JSON zurück.
+ * Fehler werden im Ergebnisobjekt als Feld "error" ausgegeben, niemals als Exception.
+ */
 @Path("/models")
 public class ModelsResource {
 
+    // Regex-Pattern zum Extrahieren von Modellnamen aus der Ollama-API-Antwort
     private static final Pattern NAME_PATTERN =
             Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"");
 
+    /**
+     * Listet alle verfügbaren Modelle vom Ollama-Server auf.
+     * 
+     * @return Map mit Basis-URL, Modellnamen, Status und ggf. Fehlerdetails
+     */
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public Map<String, Object> list() {
@@ -33,10 +45,12 @@ public class ModelsResource {
         String error = null;
 
         try {
+            // HTTP-Client mit Timeout
             HttpClient http = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(5))
                     .build();
 
+            // Anfrage an die Ollama-API
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(base + "/api/tags"))
                     .timeout(Duration.ofSeconds(10))
@@ -50,6 +64,7 @@ public class ModelsResource {
             out.put("upstreamStatus", status);
 
             if (status >= 200 && status < 300) {
+                // Modellnamen extrahieren
                 Matcher m = NAME_PATTERN.matcher(raw);
                 while (m.find()) {
                     models.add(m.group(1));

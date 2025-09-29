@@ -5,24 +5,42 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * Datenübertragungsobjekte (DTOs) für Benchmark-Anfragen und -Antworten.
+ * 
+ * Enthält verschachtelte Klassen für die Repräsentation von:
+ * - BenchRequest: Parameter für einen Benchmark-Lauf
+ * - SingleRunResult: Ergebnis eines einzelnen Durchlaufs
+ * - Aggregates: Statistische Auswertung mehrerer Durchläufe
+ * - BenchResponse: Antwortobjekt mit allen Ergebnissen und Metadaten
+ */
 public class BenchmarkDto {
 
+    /**
+     * Repräsentiert die Parameter einer Benchmark-Anfrage.
+     * Felder sind öffentlich für einfache Serialisierung.
+     * expectedKeywords ist optional und dient der Qualitätsbewertung.
+     */
     public static class BenchRequest {
-        public String provider;
-        public String model;
-        public String prompt;
-        public Double temperature;
-        public Integer maxTokens;
-        public Integer runs;
-        public Integer timeoutMs;
-        public Integer concurrency;
+        public String provider;           // Name des LLM-Providers
+        public String model;              // Modellbezeichnung
+        public String prompt;             // Eingabetext
+        public Double temperature;        // Sampling-Temperatur
+        public Integer maxTokens;         // Maximale Token-Anzahl
+        public Integer runs;              // Anzahl der Durchläufe
+        public Integer timeoutMs;         // Timeout pro Anfrage (ms)
+        public Integer concurrency;       // Parallele Anfragen
 
-        // neu: erwartete Keywords für Quality-Bewertung (optional)
+        // Optional: Erwartete Schlüsselwörter für Qualitätsbewertung
         public List<String> expectedKeywords;
 
         public BenchRequest() {}
     }
 
+    /**
+     * Ergebnis eines einzelnen Benchmark-Durchlaufs.
+     * Enthält Timing, Status, Token-Statistiken, Antworttext und Qualitätsbewertung.
+     */
     public static record SingleRunResult(
             String provider,
             String model,
@@ -36,15 +54,22 @@ public class BenchmarkDto {
             Integer totalTokens,
             Integer responseBytes,
 
-            // neu: reiner Antworttext, falls verfügbar
+            // Antworttext (falls verfügbar)
             String text,
 
-            // neu: Quality-Score 0..1, falls berechnet
+            // Qualitätsbewertung (0..1, falls berechnet)
             Double quality
     ) {
+        /**
+         * Berechnet die Dauer des Durchlaufs in Millisekunden.
+         */
         public double durationMs() { return (endNanos - startNanos) / 1_000_000.0; }
     }
 
+    /**
+     * Statistische Auswertung mehrerer Durchläufe.
+     * Enthält typische Metriken wie Durchschnitt, Minimum, Maximum und Perzentile.
+     */
     public static record Aggregates(
             int runs,
             double avgMs,
@@ -57,12 +82,20 @@ public class BenchmarkDto {
             // sondern als Felder im request-Block unten.
     ) {}
 
+    /**
+     * Antwortobjekt für einen Benchmark-Lauf.
+     * Enthält Zeitstempel, Anfrageparameter, Einzelergebnisse und Statistiken.
+     */
     public static record BenchResponse(
             String timestamp,
             Map<String, Object> request,
             SingleRunResult[] results,
             Aggregates aggregates
     ) {
+        /**
+         * Hilfsmethode zum Erzeugen einer BenchResponse aus Anfrage, Ergebnissen und Statistik.
+         * Die Anfrageparameter werden als Map serialisiert.
+         */
         public static BenchResponse of(BenchRequest req, SingleRunResult[] results, Aggregates agg) {
             Map<String, Object> reqMap = new LinkedHashMap<>();
             reqMap.put("provider", req.provider);
